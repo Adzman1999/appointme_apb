@@ -1,0 +1,87 @@
+x-common-variables: &common-variables
+  NODE_ENV: development
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: appointment-postgres-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: appointment_user
+      POSTGRES_PASSWORD: local_dev_password
+      POSTGRES_DB: appointment_booking
+      POSTGRES_INITDB_ARGS: "-c fsync=off"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - appointment-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appointment_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      args:
+        - NODE_ENV=development
+    container_name: appointment-backend-dev
+    restart: unless-stopped
+    environment:
+      <<: *common-variables
+      PORT: 5000
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: appointment_user
+      POSTGRES_PASSWORD: local_dev_password
+      POSTGRES_DB: appointment_booking
+      JWT_SECRET: dev_jwt_secret_change_in_production
+      JWT_EXPIRY: 24h
+      FRONTEND_URL: http://localhost:3000
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/package.json:/app/package.json
+      - ./backend/tsconfig.json:/app/tsconfig.json
+    command: npm run dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - appointment-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - NODE_ENV=development
+    container_name: appointment-frontend-dev
+    restart: unless-stopped
+    environment:
+      <<: *common-variables
+      VITE_API_URL: http://backend:5000/api/v1
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/package.json:/app/package.json
+    command: npm run dev
+    depends_on:
+      - backend
+    networks:
+      - appointment-network
+
+volumes:
+  postgres-data:
+    driver: local
+
+networks:
+  appointment-network:
+    driver: bridge
